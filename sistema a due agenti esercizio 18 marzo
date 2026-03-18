@@ -1,0 +1,118 @@
+# --- CLIENT ---
+client = OpenAIClient(
+    api_key=OPENAI_API_KEY,
+    model="gpt-5.3-chat-latest"
+)
+
+# --- TOOL 1: performance ---
+@tool
+def get_performance(vertical: str, month: str) -> str:
+    """Recupera fill rate e impressions per una vertical AdKaora in un mese specifico."""
+    data = {
+        "Grazia":        {"fill_rate": 87.3, "impressions": 1_500_000},
+        "Focus":         {"fill_rate": 91.2, "impressions": 980_000},
+        "TvSorrisi":     {"fill_rate": 78.5, "impressions": 2_100_000},
+        "Donna Moderna": {"fill_rate": 84.1, "impressions": 1_200_000},
+        "Panorama":      {"fill_rate": 72.8, "impressions": 760_000},
+    }
+    d = data.get(vertical, {})
+    return f"{vertical} ({month}): fill_rate={d.get('fill_rate','N/D')}%, impressions={d.get('impressions','N/D')}"
+
+# --- TOOL 2: CPM ---
+@tool
+def get_cpm(vertical: str) -> str:
+    """Recupera il CPM medio attuale per una vertical AdKaora."""
+    cpm_data = {
+        "Grazia":        3.20,
+        "Focus":         2.85,
+        "TvSorrisi":     4.10,
+        "Donna Moderna": 3.05,
+        "Panorama":      2.60,
+    }
+    cpm = cpm_data.get(vertical, "N/D")
+    return f"CPM medio {vertical}: €{cpm}"
+
+# --- TOOL 3: calcolatore ---
+@tool
+def calculate(expression: str) -> str:
+    """Calcola un'espressione matematica. Usare SEMPRE per qualsiasi calcolo numerico."""
+    try:
+        result = eval(expression, {"__builtins__": {}}, {"math": math, "abs": abs, "round": round})
+        return f"{expression} = {result}"
+    except Exception as e:
+        return f"Errore: {e}"
+
+# --- TOOL 4: revenue ---
+@tool
+def get_revenue(vertical: str, month: str) -> str:
+    """Recupera revenue per una vertical AdKaora. 
+    Le vertical disponibili sono: Grazia, Focus, TvSorrisi, Donna Moderna, Panorama."""
+    data = {
+        "Grazia":        {"revenue": 142500},
+        "Focus":         {"revenue": 98300},
+        "TvSorrisi":     {"revenue": 215000},
+        "Panorama":      {"revenue": 785000},
+        "Donna Moderna": {"revenue": 785000},
+
+        }
+    d = data.get(vertical, {}) 
+    return f"{vertical} : revenue={d.get('revenue','N/D')}"
+
+# --- AGENTE ---
+agent = Agent(
+    name="Analista_Adkaora",
+    system_prompt="""Sei un analista advertising che deve rispondere a domande 
+    del team marketing sui dati di CPM, revenue e fill rate. 
+    Usa i tool get_performance e get_cpm per prendere i dati, 
+    usa solo il tool calculate per fare qualsiasi tipo di calcolo, 
+    non eseguire MAI calcoli a mente. Rispondi sempre in italiano.""",
+    client=client,
+    tools=[get_performance, get_cpm, calculate, get_revenue ],
+    max_steps=5,
+    terminate_on_text=True
+
+)
+
+# --- Agente specializzato: Copywriter ---
+copy_agent = Agent(
+    name="report_copywriter",
+    client=client,
+    system_prompt="""Sei un copywriter specializzato in report per il Marketing di Mondadori.
+Trasformi dati e analisi tecniche in testo narrativo chiaro, con insight e raccomandazioni.
+Il tuo pubblico NON è tecnico. Rispondi in italiano.""",
+    max_steps=5,
+    terminate_on_text=True
+)
+
+# --- Agente orchestratore ---
+pianificatore = Agent(
+    name="pianificatore",
+    client=client,
+    system_prompt="""Sei il coordinatore del team analytics di AdKaora.
+Quando ricevi una richiesta:
+1. Chiedi al data_analyst di raccogliere e analizzare i dati
+2. Passa l'analisi al report_copywriter per creare il report narrativo
+Rispondi in italiano."""
+
+)
+
+# Il planner può chiamare gli altri agenti
+pianificatore.can_call(copy_agent)
+
+# --- Esecuzione ---
+response = planner.run(
+    "Prepara un report per il team Marketing sulla performance di Grazia: "
+    "fill rate, revenue e CPM. Includi raccomandazioni operative."
+)
+
+print("📋 Report finale dal sistema multi-agente:")
+print("=" * 60)
+print(response.text)
+
+
+
+
+# --- DOMANDA 1 ---
+response = agent.run("Se il CPM di Panorama salisse al livello di TvSorrisi, quanto revenue in più a parità di impressions?")
+print("📊 Risposta dell'agente:")
+print(response.text)
